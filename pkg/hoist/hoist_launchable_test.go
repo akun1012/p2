@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/square/p2/pkg/launch"
+	"github.com/square/p2/pkg/pods"
 	"github.com/square/p2/pkg/runit"
 	"gopkg.in/yaml.v2"
 
@@ -232,7 +233,7 @@ func TestDisable(t *testing.T) {
 	hl, sb := FakeHoistLaunchableForDirLegacyPod("successful_scripts_test_hoist_launchable")
 	defer CleanupFakeLaunchable(hl, sb)
 
-	disableOutput, err := hl.disable()
+	disableOutput, err := hl.disable(pods.TerminationGracePeriod)
 	Assert(t).IsNil(err, "Got an unexpected error when calling disable on the test hoist launchable")
 
 	expectedDisableOutput := "disable invoked"
@@ -247,7 +248,7 @@ func TestFailingDisable(t *testing.T) {
 	hl, sb := FakeHoistLaunchableForDirLegacyPod("failing_scripts_test_hoist_launchable")
 	defer CleanupFakeLaunchable(hl, sb)
 
-	disableOutput, err := hl.disable()
+	disableOutput, err := hl.disable(pods.TerminationGracePeriod)
 	Assert(t).IsNotNil(err, "Expected disable to fail for this test, but it didn't")
 
 	expectedDisableOutput := "Error: this script failed"
@@ -263,7 +264,7 @@ func TestNonexistentDisable(t *testing.T) {
 	hl, sb := FakeHoistLaunchableForDirLegacyPod("nonexistent_scripts_test_hoist_launchable")
 	defer CleanupFakeLaunchable(hl, sb)
 
-	disableOutput, err := hl.disable()
+	disableOutput, err := hl.disable(pods.TerminationGracePeriod)
 	Assert(t).IsNil(err, "Got an unexpected error when calling disable on the test hoist launchable")
 
 	expectedDisableOutput := ""
@@ -410,7 +411,7 @@ func TestNoDisableForUUIDPods(t *testing.T) {
 
 	// If disable actually gets run, we'll get an error because we chose the launchable
 	// with failing scripts
-	err := hl.Disable()
+	err := hl.Disable(pods.TerminationGracePeriod)
 	if err != nil {
 		t.Error("disable script shouldn't have run for a uuid pod")
 	}
@@ -419,7 +420,7 @@ func TestNoDisableForUUIDPods(t *testing.T) {
 func TestDisableWithFailingDisable(t *testing.T) {
 	// This test's behavior is not dependent on whether the pod is a legacy or uuid pod
 	hl, _ := FakeHoistLaunchableForDirLegacyPod("failing_scripts_test_hoist_launchable")
-	err := hl.Disable()
+	err := hl.Disable(pods.TerminationGracePeriod)
 	Assert(t).IsNotNil(err, "Expected error while disabling")
 	_, ok := err.(launch.DisableError)
 	Assert(t).IsTrue(ok, "Expected disable error to be returned")
@@ -428,7 +429,7 @@ func TestDisableWithFailingDisable(t *testing.T) {
 func TestDisableWithPassingDisable(t *testing.T) {
 	// This test's behavior is not dependent on whether the pod is a legacy or uuid pod
 	hl, _ := FakeHoistLaunchableForDirLegacyPod("successful_scripts_test_hoist_launchable")
-	err := hl.Disable()
+	err := hl.Disable(pods.TerminationGracePeriod)
 	Assert(t).IsNil(err, "Expected disable to succeed")
 }
 

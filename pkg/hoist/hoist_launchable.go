@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/context"
+
 	"github.com/square/p2/pkg/artifact"
 	"github.com/square/p2/pkg/auth"
 	"github.com/square/p2/pkg/cgroups"
@@ -100,7 +102,7 @@ func (hl *Launchable) IsOneoff() bool {
 	return hl.IsUUIDPod
 }
 
-func (hl *Launchable) Disable() error {
+func (hl *Launchable) Disable(gracePeriod time.Duration) error {
 	if hl.IsOneoff() {
 		// oneoff pods have nothing to disable/enable, they only run once and there's
 		// no server component
@@ -110,7 +112,7 @@ func (hl *Launchable) Disable() error {
 	// the error return from os/exec.Run is almost always meaningless
 	// ("exit status 1")
 	// since the output is more useful to the user, that's what we'll preserve
-	out, err := hl.disable()
+	out, err := hl.disable(gracePeriod)
 	if err != nil {
 		return launch.DisableError{Inner: util.Errorf("%s", out)}
 	}
@@ -176,8 +178,8 @@ func (hl *Launchable) PostActivate() (string, error) {
 	return output, nil
 }
 
-func (hl *Launchable) disable() (string, error) {
-	output, err := hl.InvokeBinScript("disable")
+func (hl *Launchable) disable(gracePeriod time.Duration) (string, error) {
+	output, err := hl.InvokeBinScriptWithTimeout("disable", gracePeriod)
 
 	// providing a disable script is optional, ignore those errors
 	if err != nil && !os.IsNotExist(err) {
@@ -226,6 +228,42 @@ func (hl *Launchable) InvokeBinScript(script string) (string, error) {
 		ClearEnv:         true,
 	}
 	cmd := exec.Command(hl.P2Exec, p2ExecArgs.CommandLine()...)
+	buffer := bytes.Buffer{}
+	cmd.Stdout = &buffer
+	cmd.Stderr = &buffer
+	err = cmd.Run()
+	if err != nil {
+		return buffer.String(), err
+	}
+
+	return buffer.String(), nil
+}
+
+func (hl *Launchable) InvokeBinScriptWithTimeout(script string, gracePeriod time.Duration) (string, error) {
+	cmdPath := filepath.Join(hl.InstallDir(), "bin", script)
+	_, err := os.Stat(cmdPath)
+	if err != nil {
+		return "", err
+	}
+
+	cgroupName := hl.CgroupName
+	if hl.CgroupConfigName == "" {
+		cgroupName = ""
+	}
+	p2ExecArgs := p2exec.P2ExecArgs{
+		Command:          []string{cmdPath},
+		User:             hl.RunAs,
+		EnvDirs:          []string{hl.PodEnvDir, hl.EnvDir()},
+		NoLimits:         hl.ExecNoLimit,
+		CgroupConfigName: hl.CgroupConfigName,
+		CgroupName:       cgroupName,
+		RequireFile:      hl.RequireFile,
+		ClearEnv:         true,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), gracePeriod)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, hl.P2Exec, p2ExecArgs.CommandLine()...)
 	buffer := bytes.Buffer{}
 	cmd.Stdout = &buffer
 	cmd.Stderr = &buffer
